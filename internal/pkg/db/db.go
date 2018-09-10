@@ -22,7 +22,6 @@ import (
 const (
 	// Databases
 	MongoDB  = "mongodb"
-	InfluxDB = "influxdb"
 	RedisDB  = "redisdb"
 	MemoryDB = "memorydb"
 

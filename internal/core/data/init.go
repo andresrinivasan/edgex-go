@@ -28,7 +28,6 @@ import (
 	"github.com/edgexfoundry/edgex-go/internal/pkg/config"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/consul"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/db"
-	"github.com/edgexfoundry/edgex-go/internal/pkg/db/influx"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/db/memory"
 	"github.com/edgexfoundry/edgex-go/pkg/clients/logging"
 	"github.com/edgexfoundry/edgex-go/pkg/clients/metadata"
@@ -127,15 +126,7 @@ func newDBClient(dbType string) (interfaces.DBClient, error) {
 	dbConfig := db.Configuration{}
 	switch dbType {
 	case db.MongoDB:
-		dbConfig.Host = Configuration.MongoDBHost
-		dbConfig.Port = Configuration.MongoDBPort
-		dbConfig.Timeout = Configuration.MongoDBConnectTimeout
-		dbConfig.DatabaseName = Configuration.MongoDatabaseName
-		dbConfig.Username = Configuration.MongoDBUserName
-		dbConfig.Password = Configuration.MongoDBPassword
-		return mongo.NewClient(dbConfig), nil
-	case db.InfluxDB:
-		return influx.NewClient(dbConfig)
+		return mongo.NewClient(config), nil
 	case db.MemoryDB:
 		return &memory.MemDB{}, nil
 	case db.RedisDB:
