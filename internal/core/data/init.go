@@ -19,9 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/edgexfoundry/edgex-go/internal/pkg/db/mongo"
-	"github.com/edgexfoundry/edgex-go/internal/pkg/db/redis"
-
 	"github.com/edgexfoundry/edgex-go/internal"
 	"github.com/edgexfoundry/edgex-go/internal/core/data/interfaces"
 	"github.com/edgexfoundry/edgex-go/internal/core/data/messaging"
@@ -29,6 +26,8 @@ import (
 	"github.com/edgexfoundry/edgex-go/internal/pkg/consul"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/db"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/db/memory"
+	"github.com/edgexfoundry/edgex-go/internal/pkg/db/mongo"
+	"github.com/edgexfoundry/edgex-go/internal/pkg/startup"
 	"github.com/edgexfoundry/edgex-go/pkg/clients/logging"
 	"github.com/edgexfoundry/edgex-go/pkg/clients/metadata"
 	"github.com/edgexfoundry/edgex-go/pkg/clients/types"
@@ -106,7 +105,15 @@ func Destruct() {
 func connectToDatabase() error {
 	// Create a database client
 	var err error
-	dbClient, err = newDBClient(Configuration.DBType)
+	dbConfig := db.Configuration{
+		Host:         Configuration.MongoDBHost,
+		Port:         Configuration.MongoDBPort,
+		Timeout:      Configuration.MongoDBConnectTimeout,
+		DatabaseName: Configuration.MongoDatabaseName,
+		Username:     Configuration.MongoDBUserName,
+		Password:     Configuration.MongoDBPassword,
+	}
+	dbClient, err = newDBClient(Configuration.DBType, dbConfig)
 	if err != nil {
 		dbClient = nil
 		return fmt.Errorf("couldn't create database client: %v", err.Error())
@@ -122,17 +129,12 @@ func connectToDatabase() error {
 }
 
 // Return the dbClient interface
-func newDBClient(dbType string) (interfaces.DBClient, error) {
-	dbConfig := db.Configuration{}
+func newDBClient(dbType string, config db.Configuration) (interfaces.DBClient, error) {
 	switch dbType {
 	case db.MongoDB:
 		return mongo.NewClient(config), nil
 	case db.MemoryDB:
 		return &memory.MemDB{}, nil
-	case db.RedisDB:
-		dbConfig.Host = Configuration.RedisHost
-		dbConfig.Port = Configuration.RedisPort
-		return redis.NewClient(dbConfig)
 	default:
 		return nil, db.ErrUnsupportedDatabase
 	}
@@ -188,10 +190,10 @@ func initializeClients(useConsul bool) {
 		Interval:    internal.ClientMonitorDefault,
 	}
 
-	mdc = metadata.NewDeviceClient(params, types.Endpoint{})
+	mdc = metadata.NewDeviceClient(params, startup.Endpoint{})
 
 	params.Path = Configuration.MetaDeviceServicePath
-	msc = metadata.NewDeviceServiceClient(params, types.Endpoint{})
+	msc = metadata.NewDeviceServiceClient(params, startup.Endpoint{})
 
 	// Create the event publisher
 	ep = messaging.NewEventPublisher(messaging.PubSubConfiguration{

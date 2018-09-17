@@ -3,7 +3,6 @@ vendor
 *.exe
 glide.lock
 *.DS_Store
-docker/docker-compose.yml
 .project
 
 # binary files
@@ -27,3 +26,6 @@ cmd/support-logging/logs/
 cmd/export-client/logs/
 cmd/export-distro/logs/
 cmd/support-notifications/logs/
+
+docker/docker-compose.yml
+docker/local-docker-compose.yml
