@@ -27,6 +27,7 @@ import (
 	"github.com/edgexfoundry/edgex-go/internal/pkg/db"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/db/memory"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/db/mongo"
+	"github.com/edgexfoundry/edgex-go/internal/pkg/db/redis"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/startup"
 	"github.com/edgexfoundry/edgex-go/pkg/clients/logging"
 	"github.com/edgexfoundry/edgex-go/pkg/clients/metadata"
@@ -105,15 +106,8 @@ func Destruct() {
 func connectToDatabase() error {
 	// Create a database client
 	var err error
-	dbConfig := db.Configuration{
-		Host:         Configuration.MongoDBHost,
-		Port:         Configuration.MongoDBPort,
-		Timeout:      Configuration.MongoDBConnectTimeout,
-		DatabaseName: Configuration.MongoDatabaseName,
-		Username:     Configuration.MongoDBUserName,
-		Password:     Configuration.MongoDBPassword,
-	}
-	dbClient, err = newDBClient(Configuration.DBType, dbConfig)
+
+	dbClient, err = newDBClient(Configuration.DBType)
 	if err != nil {
 		dbClient = nil
 		return fmt.Errorf("couldn't create database client: %v", err.Error())
@@ -132,7 +126,21 @@ func connectToDatabase() error {
 func newDBClient(dbType string, config db.Configuration) (interfaces.DBClient, error) {
 	switch dbType {
 	case db.MongoDB:
+		dbConfig := db.Configuration{
+			Host:         Configuration.MongoDBHost,
+			Port:         Configuration.MongoDBPort,
+			Timeout:      Configuration.MongoDBConnectTimeout,
+			DatabaseName: Configuration.MongoDatabaseName,
+			Username:     Configuration.MongoDBUserName,
+			Password:     Configuration.MongoDBPassword,
+		}
 		return mongo.NewClient(config), nil
+	case db.RedisDB:
+		dbConfig := dbConfiguration{
+			Host: Configuration.RedisHost,
+			Port: Configuration.RedisPort,
+		}
+		return redis.NewClient(dbClient)
 	case db.MemoryDB:
 		return &memory.MemDB{}, nil
 	default:
