@@ -149,21 +149,24 @@ func connectToDatabase() error {
 
 // Return the dbClient interface
 func newDBClient(dbType string) (interfaces.DBClient, error) {
-	dbConfig := db.Configuration{}
 	switch dbType {
 	case db.MongoDB:
-		dbConfig.Host = Configuration.MongoDBHost
-		dbConfig.Port = Configuration.MongoDBPort
-		dbConfig.Timeout = Configuration.MongoDBConnectTimeout
-		dbConfig.DatabaseName = Configuration.MongoDatabaseName
-		dbConfig.Username = Configuration.MongoDBUserName
-		dbConfig.Password = Configuration.MongoDBPassword
+		dbConfig := db.Configuration{
+			Host:         Configuration.MongoDBHost,
+			Port:         Configuration.MongoDBPort,
+			Timeout:      Configuration.MongoDBConnectTimeout,
+			DatabaseName: Configuration.MongoDatabaseName,
+			Username:     Configuration.MongoDBUserName,
+			Password:     Configuration.MongoDBPassword,
+		}
 		return mongo.NewClient(dbConfig), nil
 	case db.MemoryDB:
 		return &memory.MemDB{}, nil
 	case db.RedisDB:
-		dbConfig.Host = Configuration.RedisHost
-		dbConfig.Port = Configuration.RedisPort
+		dbConfig := db.Configuration{
+			Host: Configuration.RedisHost,
+			Port: Configuration.RedisPort,
+		}
 		return redis.NewClient(dbConfig)
 	default:
 		return nil, db.ErrUnsupportedDatabase
