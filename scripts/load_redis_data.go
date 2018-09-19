@@ -9,8 +9,10 @@ import (
 
 	"gopkg.in/mgo.v2/bson"
 
-	"github.com/edgexfoundry/edgex-go/internal/pkg/db"
 	"github.com/gomodule/redigo/redis"
+
+	"github.com/edgexfoundry/edgex-go/internal/pkg/db"
+	"github.com/edgexfoundry/edgex-go/pkg/models"
 )
 
 type handler func(map[string]interface{})
@@ -18,6 +20,7 @@ type handler func(map[string]interface{})
 func processEvent(jsonMap map[string]interface{}) {
 	var err error
 
+	// See go/src/github.com/edgexfoundry/edgex-go/internal/pkg/db/redis/event.go
 	e := struct {
 		ID       string
 		Pushed   int64
@@ -34,6 +37,7 @@ func processEvent(jsonMap map[string]interface{}) {
 		Origin:   int64(jsonMap["origin"].(float64)),
 	}
 
+	// See go/src/github.com/edgexfoundry/edgex-go/internal/pkg/db/redis/data.go:addEvent
 	redisConn.Send("MULTI")
 	marshalled, _ := bson.Marshal(e)
 	redisConn.Send("SET", e.ID, marshalled)
@@ -65,17 +69,10 @@ func processEvent(jsonMap map[string]interface{}) {
 func processReading(jsonMap map[string]interface{}) {
 	var err error
 
-	r := struct {
-		ID       string
-		Pushed   int64
-		Created  int64
-		Origin   int64
-		Modified int64
-		Device   string
-		Name     string
-		Value    string
-	}{
-		ID:       jsonMap["_id"].(map[string]interface{})["$oid"].(string),
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+
+	r := models.Reading{
+		Id:       bson.ObjectIdHex(setId),
 		Pushed:   int64(jsonMap["pushed"].(float64)),
 		Created:  int64(jsonMap["created"].(float64)),
 		Origin:   int64(jsonMap["origin"].(float64)),
@@ -86,10 +83,53 @@ func processReading(jsonMap map[string]interface{}) {
 
 	redisConn.Send("MULTI")
 	marshalled, _ := bson.Marshal(r)
-	redisConn.Send("SET", r.ID, marshalled)
-	redisConn.Send("ZADD", db.ReadingsCollection+":created", r.Created, r.ID)
-	redisConn.Send("ZADD", db.ReadingsCollection+":device:"+r.Device, r.Created, r.ID)
-	redisConn.Send("ZADD", db.ReadingsCollection+":name:"+r.Name, r.Created, r.ID)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.ReadingsCollection, 0, setId)
+	redisConn.Send("ZADD", db.ReadingsCollection+":created", r.Created, setId)
+	redisConn.Send("ZADD", db.ReadingsCollection+":device:"+r.Device, r.Created, setId)
+	redisConn.Send("ZADD", db.ReadingsCollection+":name:"+r.Name, r.Created, setId)
+	_, err = redisConn.Do("EXEC")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func processValueDescriptors(jsonMap map[string]interface{}) {
+	var err error
+
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+
+	valueDesc := models.ValueDescriptor{
+		Id:           bson.ObjectIdHex(setId),
+		Created:      int64(jsonMap["created"].(float64)),
+		Modified:     int64(jsonMap["modified"].(float64)),
+		Origin:       int64(jsonMap["origin"].(float64)),
+		Name:         jsonMap["name"].(string),
+		Min:          jsonMap["min"].(string),
+		Max:          jsonMap["max"].(string),
+		DefaultValue: jsonMap["defaultValue"].(string),
+		Type:         jsonMap["type"].(string),
+		UomLabel:     jsonMap["uomLabel"].(string),
+		Formatting:   jsonMap["formatting"].(string),
+	}
+
+	labelInterfaces := jsonMap["labels"].([]interface{})
+	valueDesc.Labels = make([]string, len(labelInterfaces))
+	for i, v := range labelInterfaces {
+		valueDesc.Labels[i] = v.(string)
+	}
+
+	redisConn.Send("MULTI")
+	marshalled, _ := bson.Marshal(valueDesc)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.ValueDescriptorCollection, 0, setId)
+	redisConn.Send("HSET", db.ValueDescriptorCollection+":name", valueDesc.Name, setId)
+	redisConn.Send("ZADD", db.ValueDescriptorCollection+":uomlabel:"+valueDesc.UomLabel, 0, setId)
+	redisConn.Send("ZADD", db.ValueDescriptorCollection+":type:"+valueDesc.Type, 0, setId)
+	for _, label := range valueDesc.Labels {
+		redisConn.Send("ZADD", db.ValueDescriptorCollection+":label:"+label, 0, setId)
+	}
+
 	_, err = redisConn.Do("EXEC")
 	if err != nil {
 		log.Fatal(err)
@@ -97,8 +137,9 @@ func processReading(jsonMap map[string]interface{}) {
 }
 
 var handlers = map[string]handler{
-	"events":   processEvent,
-	"readings": processReading,
+	"events":     processEvent,
+	"readings":   processReading,
+	"valueDescs": processValueDescriptors,
 }
 
 var redisConn redis.Conn
@@ -106,14 +147,17 @@ var redisConn redis.Conn
 func main() {
 	var err error
 
-	inputType := flag.String("t", "", "Type of input JSON; either events or readings")
+	inputType := flag.String("t", "", `Type of input JSON; one of events, readings, or valueDescs. 
+	Input file is read from STDIN`)
 	flag.Parse()
 	if *inputType == "" {
 		flag.Usage()
+		os.Exit(1)
 	}
 
 	processor := handlers[*inputType]
 	if processor == nil {
+		flag.Usage()
 		log.Fatal("Unknown input type: " + *inputType)
 	}
 
