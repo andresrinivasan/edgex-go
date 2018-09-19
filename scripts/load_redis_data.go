@@ -136,19 +136,55 @@ func processValueDescriptors(jsonMap map[string]interface{}) {
 	}
 }
 
-var handlers = map[string]handler{
-	"events":     processEvent,
-	"readings":   processReading,
-	"valueDescs": processValueDescriptors,
+func processAddressable(jsonMap map[string]interface{}) {
+	// var err error
+
+	// setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+
+	// a := models.Addressable{}
+
+	// redisConn.Send("MULTI")
+	// redisConn.Send("SET", setId, m)
+	// redisConn.Send("ZADD", db.Addressable, 0, setId)
+	// redisConn.Send("SADD", db.Addressable+":topic:"+a.Topic, setId)
+	// redisConn.Send("SADD", db.Addressable+":port:"+strconv.Itoa(a.Port), setId)
+	// redisConn.Send("SADD", db.Addressable+":publisher:"+a.Publisher, setId)
+	// redisConn.Send("SADD", db.Addressable+":address:"+a.Address, setId)
+	// redisConn.Send("HSET", db.Addressable+":name", a.Name, setId)
+	// _, err = conn.Do("EXEC")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 }
+
+var handlers = map[string]handler{
+	"event":           processEvent,
+	"reading":         processReading,
+	"valueDescriptor": processValueDescriptors,
+	//"addressable":     processAddressable,
+}
+
+// command
+// device
+// deviceProfile
+// deviceReport
+// deviceService
+// provisionWatcher
+// schedule
+// scheduleEvent
 
 var redisConn redis.Conn
 
 func main() {
 	var err error
 
-	inputType := flag.String("t", "", `Type of input JSON; one of events, readings, or valueDescs. 
-	Input file is read from STDIN`)
+	usage := "Type of input JSON; one of\n"
+	for k := range handlers {
+		usage += "\t" + k + "\n"
+	}
+
+	inputType := flag.String("t", "", usage+"Input file is read from STDIN")
+
 	flag.Parse()
 	if *inputType == "" {
 		flag.Usage()
