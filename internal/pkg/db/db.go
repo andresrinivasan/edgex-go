@@ -29,6 +29,7 @@ const (
 	EventsCollection          = "event"
 	ReadingsCollection        = "reading"
 	ValueDescriptorCollection = "valueDescriptor"
+	ExportCollection         = "exportConfiguration"
 
 	// Metadata
 	Device           = "device"
