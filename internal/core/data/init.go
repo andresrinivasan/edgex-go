@@ -123,7 +123,7 @@ func connectToDatabase() error {
 }
 
 // Return the dbClient interface
-func newDBClient(dbType string, config db.Configuration) (interfaces.DBClient, error) {
+func newDBClient(dbType string) (interfaces.DBClient, error) {
 	switch dbType {
 	case db.MongoDB:
 		dbConfig := db.Configuration{
@@ -134,13 +134,13 @@ func newDBClient(dbType string, config db.Configuration) (interfaces.DBClient, e
 			Username:     Configuration.MongoDBUserName,
 			Password:     Configuration.MongoDBPassword,
 		}
-		return mongo.NewClient(config), nil
+		return mongo.NewClient(dbConfig), nil
 	case db.RedisDB:
-		dbConfig := dbConfiguration{
+		dbConfig := db.Configuration{
 			Host: Configuration.RedisHost,
 			Port: Configuration.RedisPort,
 		}
-		return redis.NewClient(dbClient)
+		return redis.NewClient(dbConfig)
 	case db.MemoryDB:
 		return &memory.MemDB{}, nil
 	default:
