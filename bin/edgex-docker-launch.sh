@@ -9,14 +9,22 @@
 # Start EdgeX Foundry services in right order, as described:
 # https://wiki.edgexfoundry.org/display/FA/Get+EdgeX+Foundry+-+Users
 
-COMPOSE_FILE=../docker/docker-compose.yml
-COMPOSE_URL=https://raw.githubusercontent.com/edgexfoundry/developer-scripts/master/compose-files/docker-compose-california-0.6.0.yml
+if [[ -z $EDGEX_COMPOSE_FILE ]]; then
+  COMPOSE_FILE=../docker/docker-compose.yml
+  COMPOSE_URL=https://raw.githubusercontent.com/edgexfoundry/developer-scripts/master/compose-files/docker-compose-california-0.6.0.yml
 
-# echo "Pulling latest compose file..."
-# curl -o $COMPOSE_FILE $COMPOSE_URL
+  echo "Pulling latest compose file..."
+  curl -o $COMPOSE_FILE $COMPOSE_URL
+else
+  COMPOSE_FILE=$EDGEX_COMPOSE_FILE
+fi
 
-# echo "Starting mongo"
-# docker-compose -f $COMPOSE_FILE up -d mongo
+EDGEX_CORE_DB=${EDGEX_CORE_DB:-"mongo"}
+
+echo "Starting $EDGEX_CORE_DB"
+docker-compose -f $COMPOSE_FILE up -d $EDGEX_CORE_DB
+echo "Starting mongo for consul"
+docker-compose -f $COMPOSE_FILE up -d mongo
 echo "Starting consul"
 docker-compose -f $COMPOSE_FILE up -d consul
 echo "Populating configuration"
