@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 
 	"gopkg.in/mgo.v2/bson"
 
@@ -70,7 +71,6 @@ func processReading(jsonMap map[string]interface{}) {
 	var err error
 
 	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
-
 	r := models.Reading{
 		Id:       bson.ObjectIdHex(setId),
 		Pushed:   int64(jsonMap["pushed"].(float64)),
@@ -98,7 +98,6 @@ func processValueDescriptors(jsonMap map[string]interface{}) {
 	var err error
 
 	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
-
 	valueDesc := models.ValueDescriptor{
 		Id:           bson.ObjectIdHex(setId),
 		Created:      int64(jsonMap["created"].(float64)),
@@ -137,36 +136,190 @@ func processValueDescriptors(jsonMap map[string]interface{}) {
 }
 
 func processAddressable(jsonMap map[string]interface{}) {
-	// var err error
+	var err error
 
-	// setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+	a := models.Addressable{
+		BaseObject: models.BaseObject{
+			Created:  int64(jsonMap["created"].(float64)),
+			Modified: int64(jsonMap["modified"].(float64)),
+			Origin:   int64(jsonMap["origin"].(float64)),
+		},
+		Id:         bson.ObjectIdHex(setId),
+		Name:       jsonMap["name"].(string),
+		Protocol:   jsonMap["protocol"].(string),
+		HTTPMethod: jsonMap["method"].(string),
+		Address:    jsonMap["address"].(string),
+		Port:       jsonMap["port"].(int),
+		Path:       jsonMap["path"].(string),
+		Publisher:  jsonMap["publisher"].(string),
+		User:       jsonMap["user"].(string),
+		Password:   jsonMap["password"].(string),
+		Topic:      jsonMap["topic"].(string),
+	}
 
-	// a := models.Addressable{}
-
-	// redisConn.Send("MULTI")
-	// redisConn.Send("SET", setId, m)
-	// redisConn.Send("ZADD", db.Addressable, 0, setId)
-	// redisConn.Send("SADD", db.Addressable+":topic:"+a.Topic, setId)
-	// redisConn.Send("SADD", db.Addressable+":port:"+strconv.Itoa(a.Port), setId)
-	// redisConn.Send("SADD", db.Addressable+":publisher:"+a.Publisher, setId)
-	// redisConn.Send("SADD", db.Addressable+":address:"+a.Address, setId)
-	// redisConn.Send("HSET", db.Addressable+":name", a.Name, setId)
-	// _, err = conn.Do("EXEC")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
+	redisConn.Send("MULTI")
+	marshalled, _ := bson.Marshal(a)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.Addressable, 0, setId)
+	redisConn.Send("SADD", db.Addressable+":topic:"+a.Topic, setId)
+	redisConn.Send("SADD", db.Addressable+":port:"+strconv.Itoa(a.Port), setId)
+	redisConn.Send("SADD", db.Addressable+":publisher:"+a.Publisher, setId)
+	redisConn.Send("SADD", db.Addressable+":address:"+a.Address, setId)
+	redisConn.Send("HSET", db.Addressable+":name", a.Name, setId)
+	_, err = redisConn.Do("EXEC")
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
-var handlers = map[string]handler{
-	"event":           processEvent,
-	"reading":         processReading,
-	"valueDescriptor": processValueDescriptors,
-	//"addressable":     processAddressable,
+func readOptionalString(i interface{}) string {
+	if i == nil {
+		return ""
+	} else {
+		return i.(string)
+	}
 }
 
-// command
-// device
-// deviceProfile
+func processCommand(jsonMap map[string]interface{}) {
+	var err error
+
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+	c := models.Command{
+		BaseObject: models.BaseObject{
+			Created:  int64(jsonMap["created"].(float64)),
+			Modified: int64(jsonMap["modified"].(float64)),
+			Origin:   int64(jsonMap["origin"].(float64)),
+		},
+		Id:   bson.ObjectIdHex(setId),
+		Name: readOptionalString(jsonMap["name"]),
+		Get: &models.Get{
+			Action: models.Action{
+				Path:      readOptionalString(jsonMap["get"].(map[string]interface{})["path"]),
+				URL:       readOptionalString(jsonMap["get"].(map[string]interface{})["url"]),
+				Responses: nil, // XXX sample data should be array
+			},
+		},
+		Put: &models.Put{
+			Action: models.Action{
+				Path:      readOptionalString(jsonMap["get"].(map[string]interface{})["path"]),
+				URL:       readOptionalString(jsonMap["get"].(map[string]interface{})["url"]),
+				Responses: nil, // XXX sample data should be array
+			},
+			ParameterNames: nil, // XXX inconsistent with sample data
+		},
+	}
+
+	redisConn.Send("MULTI")
+	marshalled, _ := bson.Marshal(c)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.Command, 0, setId)
+	redisConn.Send("SADD", db.Command+":name:"+c.Name, setId)
+	_, err = redisConn.Do("EXEC")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func processDevice(jsonMap map[string]interface{}) {
+	var err error
+
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+	d := models.Device{
+		DescribedObject: models.DescribedObject{
+			BaseObject: models.BaseObject{
+				Created:  int64(jsonMap["created"].(float64)),
+				Modified: int64(jsonMap["modified"].(float64)),
+				Origin:   int64(jsonMap["origin"].(float64)),
+			},
+			Description: jsonMap["description"].(string),
+		},
+		Id:             bson.ObjectIdHex(setId),
+		Name:           jsonMap["name"].(string),
+		AdminState:     jsonMap["adminState"].(models.AdminState),
+		OperatingState: jsonMap["operatingState"].(models.OperatingState),
+		Addressable:    models.Addressable{}, // XXX inconsistent with sample data
+		LastConnected:  int64(jsonMap["lastConnected"].(float64)),
+		LastReported:   int64(jsonMap["lastReported"].(float64)),
+		Service:        models.DeviceService{}, // XXX inconsistent with sample data
+		Profile:        models.DeviceProfile{}, // XXX inconsistent with sample data
+	}
+
+	labelInterfaces := jsonMap["labels"].([]interface{})
+	d.Labels = make([]string, len(labelInterfaces))
+	for i, v := range labelInterfaces {
+		d.Labels[i] = v.(string)
+	}
+
+	redisConn.Send("MULTI")
+	marshalled, _ := bson.Marshal(c)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.Device, 0, setId)
+	redisConn.Send("HSET", db.Device+":name", d.Name, setId)
+	redisConn.Send("SADD", db.Device+":addressable:"+d.Addressable.Id.Hex(), setId)
+	redisConn.Send("SADD", db.Device+":service:"+d.Service.Id.Hex(), setId)
+	redisConn.Send("SADD", db.Device+":profile:"+d.Profile.Id.Hex(), setId)
+	for _, label := range d.Labels {
+		redisConn.Send("SADD", db.Device+":label:"+label, setId)
+	}
+	_, err = redisConn.Do("EXEC")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func processDeviceProfile(jsonMap map[string]interface{}) {
+	var err error
+
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+	d := models.DeviceProfile{
+		DescribedObject: models.DescribedObject{
+			BaseObject: models.BaseObject{
+				Created:  int64(jsonMap["created"].(float64)),
+				Modified: int64(jsonMap["modified"].(float64)),
+				Origin:   int64(jsonMap["origin"].(float64)),
+			},
+			Description: jsonMap["description"].(string),
+		},
+		Id:           bson.ObjectIdHex(setId),
+		Name:         jsonMap["name"].(string),
+		Manufacturer: jsonMap["manufacturer"].(string),
+		Model:        jsonMap["model"].(string),
+		Objects:      nil, // XXX inconsistent with sample data
+		Commands:     nil, // XXX inconsistent with sample data
+	}
+
+	labelInterfaces := jsonMap["labels"].([]interface{})
+	d.Labels = make([]string, len(labelInterfaces))
+	for i, v := range labelInterfaces {
+		d.Labels[i] = v.(string)
+	}
+
+	redisConn.Send("MULTI")
+	marshalled, _ := bson.Marshal(c)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.DeviceProfile, 0, setId)
+	redisConn.Send("HSET", db.DeviceProfile+":name", dp.Name, setId)
+	redisConn.Send("SADD", db.DeviceProfile+":manufacturer:"+dp.Manufacturer, setId)
+	redisConn.Send("SADD", db.DeviceProfile+":model:"+dp.Model, setId)
+	for _, label := range dp.Labels {
+		redisConn.Send("SADD", db.DeviceProfile+":label:"+label, setId)
+	}
+	if len(dp.Commands) > 0 {
+		cids := redis.Args{}.Add(db.DeviceProfile + ":commands:" + setId)
+		for _, c := range dp.Commands {
+			cid := c.Id.Hex()
+			redisConn.Send("SADD", db.DeviceProfile+":command:"+cid, setId)
+			cids = cids.Add(cid)
+		}
+		redisConn.Send("SADD", cids...)
+	}
+	_, err = redisConn.Do("EXEC")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 // deviceReport
 // deviceService
 // provisionWatcher
@@ -177,6 +330,16 @@ var redisConn redis.Conn
 
 func main() {
 	var err error
+
+	handlers := map[string]handler{
+		"event":           processEvent,
+		"reading":         processReading,
+		"valueDescriptor": processValueDescriptors,
+		"addressable":     processAddressable,
+		"command":         processCommand,
+		"device":          processDevice,
+		"deviceProfile":   processDeviceProfile,
+	}
 
 	usage := "Type of input JSON; one of\n"
 	for k := range handlers {
