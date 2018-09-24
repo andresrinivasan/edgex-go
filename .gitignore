@@ -17,15 +17,5 @@ cmd/support-notifications/support-notifications
 cmd/sys-mgmt-agent/sys-mgmt-agent
 
 # log dirs
-logs/
-cmd/config-seed/logs/
-cmd/core-command/logs/
-cmd/core-data/logs/
-cmd/core-metadata/logs/
-cmd/support-logging/logs/
-cmd/export-client/logs/
-cmd/export-distro/logs/
-cmd/support-notifications/logs/
+**/logs
 
-docker/docker-compose.yml
-docker/local-docker-compose.yml
