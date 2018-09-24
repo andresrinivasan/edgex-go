@@ -1,22 +1,7 @@
 DeviceUpdateLastConnected = false
 MetaDataCheck = false
 PersistData = true
-ReadMaxLimit = 100
 ServiceUpdateLastConnected = false
-DBType = 'redisdb'
-MongoDBUserName = ''
-MongoDBPassword = ''
-MongoDatabaseName = 'coredata'
-MongoDBHost = 'localhost'
-MongoDBPort = 27017
-MongoDBConnectTimeout = 5000
-RedisHost = 'localhost'
-RedisPort = 6379
-ConsulHost = 'localhost'
-ConsulCheckAddress = 'http://localhost:48080/api/v1/ping'
-ConsulPort = 8500
-StartupMsg = 'This is the Core Data Microservice'
-Timeout = 5000
 ValidateCheck = false
 
 [Service]
@@ -26,6 +11,9 @@ CheckInterval = '10s'
 Host = 'localhost'
 Port = 48080
 Protocol = 'http'
+ReadMaxLimit = 100
+StartupMsg = 'This is the Core Data Microservice'
+Timeout = 5000
 
 [Registry]
 Host = 'localhost'
