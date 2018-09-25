@@ -87,8 +87,9 @@ func unmarshalEvent(o []byte, event *models.Event) (err error) {
 	}
 
 	event.Readings = make([]models.Reading, len(objects))
+
 	for i, in := range objects {
-		err = unmarshalObject(in, event.Readings[i])
+		err = unmarshalObject(in, &event.Readings[i])
 		if err != nil {
 			return err
 		}

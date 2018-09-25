@@ -78,8 +78,6 @@ func Retry(useConsul bool, useProfile string, timeout int, wait *sync.WaitGroup,
 	}
 	close(ch)
 	wait.Done()
-
-	return
 }
 
 func Init(useConsul bool) bool {
