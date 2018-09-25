@@ -4,6 +4,9 @@ vendor
 glide.lock
 *.DS_Store
 .project
+*.snap
+*.bz2
+*.pyc
 
 # binary files
 cmd/config-seed/config-seed
@@ -18,4 +21,3 @@ cmd/sys-mgmt-agent/sys-mgmt-agent
 
 # log dirs
 **/logs
-
