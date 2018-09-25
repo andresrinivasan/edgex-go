@@ -17,6 +17,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -126,9 +127,8 @@ func processValueDescriptors(jsonMap map[string]interface{}) {
 		Formatting:   jsonMap["formatting"].(string),
 	}
 
-	labelInterfaces := jsonMap["labels"].([]interface{})
-	valueDesc.Labels = make([]string, len(labelInterfaces))
-	for i, v := range labelInterfaces {
+	valueDesc.Labels = make([]string, len(jsonMap["labels"].([]interface{})))
+	for i, v := range jsonMap["labels"].([]interface{}) {
 		valueDesc.Labels[i] = v.(string)
 	}
 
@@ -190,8 +190,67 @@ func processAddressable(jsonMap map[string]interface{}) {
 func readOptionalString(i interface{}) string {
 	if i == nil {
 		return ""
-	} else {
-		return i.(string)
+	}
+
+	return i.(string)
+}
+
+// XXX Assumes single entry that's in test data
+func readOptionalResponses(i interface{}) []models.Response {
+	if i == nil {
+		return []models.Response{}
+	}
+
+	m := i.(map[string]interface{})
+	return []models.Response{
+		models.Response{
+			Code:           m["code"].(string),
+			Description:    m["errorDescription"].(string),         // XXX sample data is not aligned
+			ExpectedValues: []string{m["expectedValues"].(string)}, // XXX sample data is not aligned
+		},
+	}
+}
+
+func readAction(m map[string]interface{}) models.Action {
+	return models.Action{
+		Path:      readOptionalString(m["path"]),
+		URL:       readOptionalString(m["url"]),
+		Responses: readOptionalResponses(m["response"]),
+	}
+}
+
+func readOptionalGet(m map[string]interface{}) *models.Get {
+	if m == nil {
+		return nil
+	}
+
+	return &models.Get{
+		Action: readAction(m),
+	}
+}
+
+func readOptionalParameterNames(i interface{}) []string {
+	if i == nil {
+		return nil
+	}
+
+	a := i.([]interface{})
+	names := make([]string, len(a))
+	for i, v := range a {
+		names[i] = v.(map[string]interface{})["name"].(string)
+	}
+
+	return names
+}
+
+func readOptionalPut(m map[string]interface{}) *models.Put {
+	if m == nil {
+		return nil
+	}
+
+	return &models.Put{
+		Action:         readAction(m),
+		ParameterNames: readOptionalParameterNames(m["parameters"]), // XXX sample data is not aligned
 	}
 }
 
@@ -207,22 +266,11 @@ func processCommand(jsonMap map[string]interface{}) {
 		},
 		Id:   bson.ObjectIdHex(setId),
 		Name: readOptionalString(jsonMap["name"]),
-		Get: &models.Get{
-			Action: models.Action{
-				Path:      readOptionalString(jsonMap["get"].(map[string]interface{})["path"]),
-				URL:       readOptionalString(jsonMap["get"].(map[string]interface{})["url"]),
-				Responses: nil, // XXX sample data should be array
-			},
-		},
-		Put: &models.Put{
-			Action: models.Action{
-				Path:      readOptionalString(jsonMap["get"].(map[string]interface{})["path"]),
-				URL:       readOptionalString(jsonMap["get"].(map[string]interface{})["url"]),
-				Responses: nil, // XXX sample data should be array
-			},
-			ParameterNames: nil, // XXX inconsistent with sample data
-		},
+		Get:  readOptionalGet(jsonMap["get"].(map[string]interface{})),
+		Put:  readOptionalPut(jsonMap["put"].(map[string]interface{})),
 	}
+
+	fmt.Println(c)
 
 	redisConn.Send("MULTI")
 	marshalled, _ := bson.Marshal(c)
@@ -377,7 +425,7 @@ func main() {
 		log.Fatal("Unknown input type: " + *inputType)
 	}
 
-	// XXX FIXME Use Configuration. Not sure how...
+	// XXX FIXME Use Configuration.
 	redisConn, err = redis.DialURL("redis://localhost:6379")
 	if err != nil {
 		log.Fatal(err)
