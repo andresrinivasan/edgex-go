@@ -363,62 +363,74 @@ func processDevice(jsonMap map[string]interface{}) {
 	}
 }
 
-// func processDeviceProfile(jsonMap map[string]interface{}) {
-// 	var err error
+func readOptionalCommands(i interface{}) []models.Command {
+	if i == nil {
+		return []models.Command{}
+	}
 
-// 	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
-// 	d := models.DeviceProfile{
-// 		DescribedObject: models.DescribedObject{
-// 			BaseObject: models.BaseObject{
-// 				Created:  int64(jsonMap["created"].(float64)),
-// 				Modified: int64(jsonMap["modified"].(float64)),
-// 				Origin:   int64(jsonMap["origin"].(float64)),
-// 			},
-// 			Description: jsonMap["description"].(string),
-// 		},
-// 		Id:           bson.ObjectIdHex(setId),
-// 		Name:         jsonMap["name"].(string),
-// 		Manufacturer: jsonMap["manufacturer"].(string),
-// 		Model:        jsonMap["model"].(string),
-// 		Objects:      nil, // XXX inconsistent with sample data
-// 		Commands:     nil, // XXX inconsistent with sample data
-// 	}
+	a := make([]models.Command, len(i.([]interface{})))
+	for i, v := range i.([]interface{}) {
+		a[i] = models.Command{
+			Id: bson.ObjectIdHex(v.(map[string]interface{})["$id"].(map[string]interface{})["$oid"].(string)),
+		}
+	}
 
-// 	labelInterfaces := jsonMap["labels"].([]interface{})
-// 	d.Labels = make([]string, len(labelInterfaces))
-// 	for i, v := range labelInterfaces {
-// 		d.Labels[i] = v.(string)
-// 	}
-
-// 	redisConn.Send("MULTI")
-// 	marshalled, _ := bson.Marshal(c)
-// 	redisConn.Send("SET", setId, marshalled)
-// 	redisConn.Send("ZADD", db.DeviceProfile, 0, setId)
-// 	redisConn.Send("HSET", db.DeviceProfile+":name", dp.Name, setId)
-// 	redisConn.Send("SADD", db.DeviceProfile+":manufacturer:"+dp.Manufacturer, setId)
-// 	redisConn.Send("SADD", db.DeviceProfile+":model:"+dp.Model, setId)
-// 	for _, label := range dp.Labels {
-// 		redisConn.Send("SADD", db.DeviceProfile+":label:"+label, setId)
-// 	}
-// 	if len(dp.Commands) > 0 {
-// 		cids := redis.Args{}.Add(db.DeviceProfile + ":commands:" + setId)
-// 		for _, c := range dp.Commands {
-// 			cid := c.Id.Hex()
-// 			redisConn.Send("SADD", db.DeviceProfile+":command:"+cid, setId)
-// 			cids = cids.Add(cid)
-// 		}
-// 		redisConn.Send("SADD", cids...)
-// 	}
-// 	_, err = redisConn.Do("EXEC")
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-//}
-
-func processDeviceProfile(jsonMap map[string]interface{}) {
+	return a
 }
 
-// mongoimport -d metadata -c device --file deviceDb.json
+func processDeviceProfile(jsonMap map[string]interface{}) {
+	var err error
+
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+	d := models.DeviceProfile{
+		DescribedObject: models.DescribedObject{
+			BaseObject: models.BaseObject{
+				Created:  int64(jsonMap["created"].(float64)),
+				Modified: int64(jsonMap["modified"].(float64)),
+				Origin:   int64(jsonMap["origin"].(float64)),
+			},
+			Description: jsonMap["description"].(string),
+		},
+		Id:           bson.ObjectIdHex(setId),
+		Name:         jsonMap["name"].(string),
+		Manufacturer: jsonMap["manufacturer"].(string),
+		Model:        jsonMap["model"].(string),
+		Objects:      jsonMap["objects"],
+		Commands:     readOptionalCommands(jsonMap["commands"]),
+	}
+
+	d.Labels = make([]string, len(jsonMap["labels"].([]interface{})))
+	for i, v := range jsonMap["labels"].([]interface{}) {
+		d.Labels[i] = v.(string)
+	}
+
+	fmt.Println(d)
+
+	redisConn.Send("MULTI")
+	marshalled, _ := bson.Marshal(d)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.DeviceProfile, 0, setId)
+	redisConn.Send("HSET", db.DeviceProfile+":name", d.Name, setId)
+	redisConn.Send("SADD", db.DeviceProfile+":manufacturer:"+d.Manufacturer, setId)
+	redisConn.Send("SADD", db.DeviceProfile+":model:"+d.Model, setId)
+	for _, label := range d.Labels {
+		redisConn.Send("SADD", db.DeviceProfile+":label:"+label, setId)
+	}
+	if len(d.Commands) > 0 {
+		cids := redis.Args{}.Add(db.DeviceProfile + ":commands:" + setId)
+		for _, c := range d.Commands {
+			cid := c.Id.Hex()
+			redisConn.Send("SADD", db.DeviceProfile+":command:"+cid, setId)
+			cids = cids.Add(cid)
+		}
+		redisConn.Send("SADD", cids...)
+	}
+	_, err = redisConn.Do("EXEC")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 // mongoimport -d metadata -c deviceProfile --file deviceProfileDb.json
 // mongoimport -d metadata -c deviceReport --file deviceReportDb.json
 // mongoimport -d metadata -c deviceService --file deviceserviceDb.json
