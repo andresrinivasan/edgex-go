@@ -381,30 +381,41 @@ func readOptionalCommands(i interface{}) []models.Command {
 func processDeviceProfile(jsonMap map[string]interface{}) {
 	var err error
 
+	fmt.Println(jsonMap)
+
 	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
-	d := models.DeviceProfile{
+
+	// See $GOPATH/src/github.com/edgexfoundry/edgex-go/internal/pkg/db/redis/metadata.go:addDeviceProfile
+	d := struct {
+		models.DescribedObject
+		Id              string
+		Name            string
+		Manufacturer    string
+		Model           string
+		Labels          []string
+		Objects         interface{}
+		DeviceResources []models.DeviceObject
+		Resources       []models.ProfileResource
+	}{
 		DescribedObject: models.DescribedObject{
 			BaseObject: models.BaseObject{
 				Created:  int64(jsonMap["created"].(float64)),
 				Modified: int64(jsonMap["modified"].(float64)),
 				Origin:   int64(jsonMap["origin"].(float64)),
 			},
-			Description: jsonMap["description"].(string),
+			Description: readOptionalString(jsonMap["description"]),
 		},
-		Id:           bson.ObjectIdHex(setId),
+		Id:           setId,
 		Name:         jsonMap["name"].(string),
 		Manufacturer: jsonMap["manufacturer"].(string),
 		Model:        jsonMap["model"].(string),
 		Objects:      jsonMap["objects"],
-		Commands:     readOptionalCommands(jsonMap["commands"]),
 	}
 
 	d.Labels = make([]string, len(jsonMap["labels"].([]interface{})))
 	for i, v := range jsonMap["labels"].([]interface{}) {
 		d.Labels[i] = v.(string)
 	}
-
-	fmt.Println(d)
 
 	redisConn.Send("MULTI")
 	marshalled, _ := bson.Marshal(d)
@@ -416,9 +427,11 @@ func processDeviceProfile(jsonMap map[string]interface{}) {
 	for _, label := range d.Labels {
 		redisConn.Send("SADD", db.DeviceProfile+":label:"+label, setId)
 	}
-	if len(d.Commands) > 0 {
+
+	commands := readOptionalCommands(jsonMap["commands"])
+	if len(commands) > 0 {
 		cids := redis.Args{}.Add(db.DeviceProfile + ":commands:" + setId)
-		for _, c := range d.Commands {
+		for _, c := range commands {
 			cid := c.Id.Hex()
 			redisConn.Send("SADD", db.DeviceProfile+":command:"+cid, setId)
 			cids = cids.Add(cid)
@@ -431,7 +444,42 @@ func processDeviceProfile(jsonMap map[string]interface{}) {
 	}
 }
 
-// mongoimport -d metadata -c deviceProfile --file deviceProfileDb.json
+func processDeviceReport(jsonMap map[string]interface{}) {
+	var err error
+
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+	d := models.DeviceReport{
+		BaseObject: models.BaseObject{
+			Created:  int64(jsonMap["created"].(float64)),
+			Modified: int64(jsonMap["modified"].(float64)),
+			Origin:   int64(jsonMap["origin"].(float64)),
+		},
+		Id:     bson.ObjectIdHex(setId),
+		Name:   jsonMap["name"].(string),
+		Device: jsonMap["device"].(string),
+		Event:  jsonMap["event"].(string),
+	}
+
+	d.Expected = make([]string, len(jsonMap["expected"].([]interface{})))
+	for i, v := range jsonMap["expected"].([]interface{}) {
+		d.Expected[i] = v.(string)
+	}
+
+	redisConn.Send("MULTI")
+	marshalled, _ := bson.Marshal(d)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.DeviceReport, 0, setId)
+	redisConn.Send("SADD", db.DeviceReport+":device:"+d.Device, setId)
+	redisConn.Send("SADD", db.DeviceReport+":scheduleevent:"+d.Event, setId)
+	redisConn.Send("HSET", db.DeviceReport+":name", d.Name, setId)
+	_, err = redisConn.Do("EXEC")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(d)
+}
+
 // mongoimport -d metadata -c deviceReport --file deviceReportDb.json
 // mongoimport -d metadata -c deviceService --file deviceserviceDb.json
 // mongoimport -d metadata -c provisionWatcher --file provisioWatcherDb.json
@@ -451,6 +499,7 @@ func main() {
 		"command":         processCommand,
 		"device":          processDevice,
 		"deviceProfile":   processDeviceProfile,
+		"deviceReport":    processDeviceReport,
 	}
 
 	usage := "Type of input JSON; one of\n"
