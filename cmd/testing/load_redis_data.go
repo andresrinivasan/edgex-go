@@ -576,8 +576,32 @@ func processProvisionWatcher(jsonMap map[string]interface{}) {
 	}
 }
 
-// mongoimport -d metadata -c provisionWatcher --file provisioWatcherDb.json
-// mongoimport -d metadata -c schedule --file scheduleDb.json
+func processSchedule(jsonMap map[string]interface{}) {
+	var err error
+
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+	s := models.Schedule{
+		BaseObject: readOptionalBaseObject(jsonMap),
+		Id:         bson.ObjectIdHex(setId),
+		Name:       jsonMap["name"].(string),
+		Start:      readOptionalString(jsonMap["start"]),
+		End:        readOptionalString(jsonMap["end"]),
+		Frequency:  readOptionalString(jsonMap["frequency"]),
+		Cron:       readOptionalString(jsonMap["cron"]),
+		RunOnce:    jsonMap["runOnce"].(bool),
+	}
+
+	redisConn.Send("MULTI")
+	marshalled, _ := bson.Marshal(s)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.Schedule, 0, setId)
+	redisConn.Send("HSET", db.Schedule+":name", s.Name, setId)
+	_, err = redisConn.Do("EXEC")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 // mongoimport -d metadata -c scheduleEvent --file scheduleEventDb.json
 
 var redisConn redis.Conn
@@ -596,6 +620,7 @@ func main() {
 		"deviceReport":     processDeviceReport,
 		"deviceService":    processDeviceService,
 		"provisionWatcher": processProvisionWatcher,
+		"schedule":         processSchedule,
 	}
 
 	usage := "Type of input JSON; one of\n"
