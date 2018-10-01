@@ -17,7 +17,6 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -109,6 +108,19 @@ func processReading(jsonMap map[string]interface{}) {
 	}
 }
 
+func readOptionalStringArray(i interface{}) []string {
+	if i == nil {
+		return nil
+	}
+
+	a := make([]string, len(i.([]interface{})))
+	for c, v := range i.([]interface{}) {
+		a[c] = v.(string)
+	}
+
+	return a
+}
+
 func processValueDescriptors(jsonMap map[string]interface{}) {
 	var err error
 
@@ -125,12 +137,13 @@ func processValueDescriptors(jsonMap map[string]interface{}) {
 		Type:         jsonMap["type"].(string),
 		UomLabel:     jsonMap["uomLabel"].(string),
 		Formatting:   jsonMap["formatting"].(string),
+		Labels:       readOptionalStringArray(jsonMap["labels"]),
 	}
 
-	valueDesc.Labels = make([]string, len(jsonMap["labels"].([]interface{})))
-	for i, v := range jsonMap["labels"].([]interface{}) {
-		valueDesc.Labels[i] = v.(string)
-	}
+	// valueDesc.Labels = make([]string, len(jsonMap["labels"].([]interface{})))
+	// for i, v := range jsonMap["labels"].([]interface{}) {
+	// 	valueDesc.Labels[i] = v.(string)
+	// }
 
 	redisConn.Send("MULTI")
 	marshalled, _ := bson.Marshal(valueDesc)
@@ -149,28 +162,64 @@ func processValueDescriptors(jsonMap map[string]interface{}) {
 	}
 }
 
+func readOptionalBaseObject(i interface{}) models.BaseObject {
+	if i == nil {
+		return models.BaseObject{}
+	}
+
+	m := i.(map[string]interface{})
+	return models.BaseObject{
+		Created:  int64(m["created"].(float64)),
+		Modified: int64(m["modified"].(float64)),
+		Origin:   int64(m["origin"].(float64)),
+	}
+}
+
+func readOptionalInt(i interface{}) int {
+	if i == nil {
+		return 0
+	}
+
+	return int(i.(float64))
+}
+
+func readOptionalAddressable(i interface{}) models.Addressable {
+	if i == nil {
+		return models.Addressable{}
+	}
+
+	m := i.(map[string]interface{})
+	a := models.Addressable{}
+
+	if m["$ref"] != nil {
+		a = models.Addressable{
+			Id: bson.ObjectIdHex(m["$id"].(map[string]interface{})["$oid"].(string)),
+		}
+	} else {
+		a = models.Addressable{
+			BaseObject: readOptionalBaseObject(m),
+			Id:         bson.ObjectIdHex(m["_id"].(map[string]interface{})["$oid"].(string)),
+			Name:       readOptionalString(m["name"]),
+			Protocol:   readOptionalString(m["protocol"]),
+			HTTPMethod: readOptionalString(m["method"]),
+			Address:    readOptionalString(m["address"]),
+			Port:       readOptionalInt(m["port"]),
+			Path:       readOptionalString(m["path"]),
+			Publisher:  readOptionalString(m["publisher"]),
+			User:       readOptionalString(m["user"]),
+			Password:   readOptionalString(m["password"]),
+			Topic:      readOptionalString(m["topic"]),
+		}
+	}
+
+	return a
+}
+
 func processAddressable(jsonMap map[string]interface{}) {
 	var err error
 
-	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
-	a := models.Addressable{
-		BaseObject: models.BaseObject{
-			Created:  int64(jsonMap["created"].(float64)),
-			Modified: int64(jsonMap["modified"].(float64)),
-			Origin:   int64(jsonMap["origin"].(float64)),
-		},
-		Id:         bson.ObjectIdHex(setId),
-		Name:       jsonMap["name"].(string),
-		Protocol:   jsonMap["protocol"].(string),
-		HTTPMethod: jsonMap["method"].(string),
-		Address:    jsonMap["address"].(string),
-		Port:       jsonMap["port"].(int),
-		Path:       jsonMap["path"].(string),
-		Publisher:  jsonMap["publisher"].(string),
-		User:       jsonMap["user"].(string),
-		Password:   jsonMap["password"].(string),
-		Topic:      jsonMap["topic"].(string),
-	}
+	a := readOptionalAddressable(jsonMap)
+	setId := a.Id
 
 	redisConn.Send("MULTI")
 	marshalled, _ := bson.Marshal(a)
@@ -259,18 +308,12 @@ func processCommand(jsonMap map[string]interface{}) {
 
 	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
 	c := models.Command{
-		BaseObject: models.BaseObject{
-			Created:  int64(jsonMap["created"].(float64)),
-			Modified: int64(jsonMap["modified"].(float64)),
-			Origin:   int64(jsonMap["origin"].(float64)),
-		},
-		Id:   bson.ObjectIdHex(setId),
-		Name: readOptionalString(jsonMap["name"]),
-		Get:  readOptionalGet(jsonMap["get"].(map[string]interface{})),
-		Put:  readOptionalPut(jsonMap["put"].(map[string]interface{})),
+		BaseObject: readOptionalBaseObject(jsonMap),
+		Id:         bson.ObjectIdHex(setId),
+		Name:       readOptionalString(jsonMap["name"]),
+		Get:        readOptionalGet(jsonMap["get"].(map[string]interface{})),
+		Put:        readOptionalPut(jsonMap["put"].(map[string]interface{})),
 	}
-
-	fmt.Println(c)
 
 	redisConn.Send("MULTI")
 	marshalled, _ := bson.Marshal(c)
@@ -280,16 +323,6 @@ func processCommand(jsonMap map[string]interface{}) {
 	_, err = redisConn.Do("EXEC")
 	if err != nil {
 		log.Fatal(err)
-	}
-}
-
-func readOptionalAddressable(i interface{}) models.Addressable {
-	if i == nil {
-		return models.Addressable{}
-	}
-
-	return models.Addressable{
-		Id: bson.ObjectIdHex(i.(map[string]interface{})["$id"].(map[string]interface{})["$oid"].(string)),
 	}
 }
 
@@ -315,36 +348,35 @@ func readOptionalDeviceProfile(i interface{}) models.DeviceProfile {
 	}
 }
 
+func readOptionalDescribedObject(i interface{}) models.DescribedObject {
+	if i == nil {
+		return models.DescribedObject{}
+	}
+
+	m := i.(map[string]interface{})
+	return models.DescribedObject{
+		BaseObject:  readOptionalBaseObject(m),
+		Description: m["description"].(string),
+	}
+}
+
 func processDevice(jsonMap map[string]interface{}) {
 	var err error
 
 	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
 	d := models.Device{
-		DescribedObject: models.DescribedObject{
-			BaseObject: models.BaseObject{
-				Created:  int64(jsonMap["created"].(float64)),
-				Modified: int64(jsonMap["modified"].(float64)),
-				Origin:   int64(jsonMap["origin"].(float64)),
-			},
-			Description: jsonMap["description"].(string),
-		},
-		Id:             bson.ObjectIdHex(setId),
-		Name:           jsonMap["name"].(string),
-		AdminState:     models.AdminState(jsonMap["adminState"].(string)),
-		OperatingState: models.OperatingState(jsonMap["operatingState"].(string)),
-		LastConnected:  int64(jsonMap["lastConnected"].(float64)),
-		LastReported:   int64(jsonMap["lastReported"].(float64)),
-		Addressable:    readOptionalAddressable(jsonMap["addressable"]),
-		Service:        readOptionalDeviceService(jsonMap["service"]),
-		Profile:        readOptionalDeviceProfile(jsonMap["profile"]),
+		DescribedObject: readOptionalDescribedObject(jsonMap),
+		Id:              bson.ObjectIdHex(setId),
+		Name:            jsonMap["name"].(string),
+		AdminState:      models.AdminState(jsonMap["adminState"].(string)),
+		OperatingState:  models.OperatingState(jsonMap["operatingState"].(string)),
+		LastConnected:   int64(jsonMap["lastConnected"].(float64)),
+		LastReported:    int64(jsonMap["lastReported"].(float64)),
+		Addressable:     readOptionalAddressable(jsonMap["addressable"]),
+		Service:         readOptionalDeviceService(jsonMap["service"]),
+		Profile:         readOptionalDeviceProfile(jsonMap["profile"]),
+		Labels:          readOptionalStringArray(jsonMap["labels"]),
 	}
-
-	d.Labels = make([]string, len(jsonMap["labels"].([]interface{})))
-	for i, v := range jsonMap["labels"].([]interface{}) {
-		d.Labels[i] = v.(string)
-	}
-
-	fmt.Println(d)
 
 	redisConn.Send("MULTI")
 	marshalled, _ := bson.Marshal(d)
@@ -381,8 +413,6 @@ func readOptionalCommands(i interface{}) []models.Command {
 func processDeviceProfile(jsonMap map[string]interface{}) {
 	var err error
 
-	fmt.Println(jsonMap)
-
 	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
 
 	// See $GOPATH/src/github.com/edgexfoundry/edgex-go/internal/pkg/db/redis/metadata.go:addDeviceProfile
@@ -397,24 +427,13 @@ func processDeviceProfile(jsonMap map[string]interface{}) {
 		DeviceResources []models.DeviceObject
 		Resources       []models.ProfileResource
 	}{
-		DescribedObject: models.DescribedObject{
-			BaseObject: models.BaseObject{
-				Created:  int64(jsonMap["created"].(float64)),
-				Modified: int64(jsonMap["modified"].(float64)),
-				Origin:   int64(jsonMap["origin"].(float64)),
-			},
-			Description: readOptionalString(jsonMap["description"]),
-		},
-		Id:           setId,
-		Name:         jsonMap["name"].(string),
-		Manufacturer: jsonMap["manufacturer"].(string),
-		Model:        jsonMap["model"].(string),
-		Objects:      jsonMap["objects"],
-	}
-
-	d.Labels = make([]string, len(jsonMap["labels"].([]interface{})))
-	for i, v := range jsonMap["labels"].([]interface{}) {
-		d.Labels[i] = v.(string)
+		DescribedObject: readOptionalDescribedObject(jsonMap),
+		Id:              setId,
+		Name:            jsonMap["name"].(string),
+		Manufacturer:    jsonMap["manufacturer"].(string),
+		Model:           jsonMap["model"].(string),
+		Objects:         jsonMap["objects"],
+		Labels:          readOptionalStringArray(jsonMap["labels"]),
 	}
 
 	redisConn.Send("MULTI")
@@ -449,15 +468,11 @@ func processDeviceReport(jsonMap map[string]interface{}) {
 
 	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
 	d := models.DeviceReport{
-		BaseObject: models.BaseObject{
-			Created:  int64(jsonMap["created"].(float64)),
-			Modified: int64(jsonMap["modified"].(float64)),
-			Origin:   int64(jsonMap["origin"].(float64)),
-		},
-		Id:     bson.ObjectIdHex(setId),
-		Name:   jsonMap["name"].(string),
-		Device: jsonMap["device"].(string),
-		Event:  jsonMap["event"].(string),
+		BaseObject: readOptionalBaseObject(jsonMap),
+		Id:         bson.ObjectIdHex(setId),
+		Name:       jsonMap["name"].(string),
+		Device:     jsonMap["device"].(string),
+		Event:      jsonMap["event"].(string),
 	}
 
 	d.Expected = make([]string, len(jsonMap["expected"].([]interface{})))
@@ -476,12 +491,91 @@ func processDeviceReport(jsonMap map[string]interface{}) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Println(d)
 }
 
-// mongoimport -d metadata -c deviceReport --file deviceReportDb.json
-// mongoimport -d metadata -c deviceService --file deviceserviceDb.json
+func processDeviceService(jsonMap map[string]interface{}) {
+	var err error
+
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+	d := struct {
+		models.DescribedObject
+		Id             string
+		Name           string
+		LastConnected  int64
+		LastReported   int64
+		OperatingState models.OperatingState
+		Addressable    string
+		Labels         []string
+		AdminState     models.AdminState
+	}{
+		DescribedObject: readOptionalDescribedObject(jsonMap),
+		Id:              setId,
+		Name:            jsonMap["name"].(string),
+		LastConnected:   int64(jsonMap["lastConnected"].(float64)),
+		LastReported:    int64(jsonMap["lastReported"].(float64)),
+		OperatingState:  models.OperatingState(jsonMap["operatingState"].(string)),
+		Labels:          readOptionalStringArray(jsonMap["labels"]),
+		Addressable:     jsonMap["addressable"].(map[string]interface{})["$id"].(map[string]interface{})["$oid"].(string),
+		AdminState:      models.AdminState(jsonMap["adminState"].(string)),
+	}
+
+	redisConn.Send("MULTI")
+	marshalled, _ := bson.Marshal(d)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.DeviceService, 0, setId)
+	redisConn.Send("HSET", db.DeviceService+":name", d.Name, setId)
+	redisConn.Send("SADD", db.DeviceService+":addressable:"+d.Addressable, setId)
+	for _, label := range d.Labels {
+		redisConn.Send("SADD", db.DeviceService+":label:"+label, setId)
+	}
+	_, err = redisConn.Do("EXEC")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func processProvisionWatcher(jsonMap map[string]interface{}) {
+	var err error
+
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+	p := struct {
+		models.BaseObject
+		Id             string
+		Name           string
+		Identifiers    map[string]string
+		Profile        string
+		Service        string
+		OperatingState models.OperatingState
+	}{
+		BaseObject:     readOptionalBaseObject(jsonMap),
+		Name:           jsonMap["name"].(string),
+		Profile:        jsonMap["profile"].(map[string]interface{})["$id"].(map[string]interface{})["$oid"].(string),
+		Service:        jsonMap["service"].(map[string]interface{})["$id"].(map[string]interface{})["$oid"].(string),
+		OperatingState: models.OperatingState(readOptionalString(jsonMap["operatingState"])),
+	}
+
+	p.Identifiers = make(map[string]string)
+	for k, v := range jsonMap["identifiers"].(map[string]interface{}) {
+		p.Identifiers[k] = v.(string)
+	}
+
+	redisConn.Send("MULTI")
+	marshalled, _ := bson.Marshal(p)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.ProvisionWatcher, 0, setId)
+	redisConn.Send("HSET", db.ProvisionWatcher+":name", p.Name, setId)
+	redisConn.Send("SADD", db.ProvisionWatcher+":service:"+p.Service, setId)
+	redisConn.Send("SADD", db.ProvisionWatcher+":profile:"+p.Profile, setId)
+	for k, v := range p.Identifiers {
+		redisConn.Send("SADD", db.ProvisionWatcher+":identifier:"+k+":"+v, setId)
+	}
+
+	_, err = redisConn.Do("EXEC")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 // mongoimport -d metadata -c provisionWatcher --file provisioWatcherDb.json
 // mongoimport -d metadata -c schedule --file scheduleDb.json
 // mongoimport -d metadata -c scheduleEvent --file scheduleEventDb.json
@@ -492,14 +586,16 @@ func main() {
 	var err error
 
 	handlers := map[string]handler{
-		"event":           processEvent,
-		"reading":         processReading,
-		"valueDescriptor": processValueDescriptors,
-		"addressable":     processAddressable,
-		"command":         processCommand,
-		"device":          processDevice,
-		"deviceProfile":   processDeviceProfile,
-		"deviceReport":    processDeviceReport,
+		"event":            processEvent,
+		"reading":          processReading,
+		"valueDescriptor":  processValueDescriptors,
+		"addressable":      processAddressable,
+		"command":          processCommand,
+		"device":           processDevice,
+		"deviceProfile":    processDeviceProfile,
+		"deviceReport":     processDeviceReport,
+		"deviceService":    processDeviceService,
+		"provisionWatcher": processProvisionWatcher,
 	}
 
 	usage := "Type of input JSON; one of\n"
