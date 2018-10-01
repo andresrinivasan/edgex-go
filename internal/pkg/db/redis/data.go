@@ -808,7 +808,7 @@ func addEvent(conn redis.Conn, e *models.Event) (err error) {
 			return err
 		}
 		rids[i*2+1] = 0
-		rids[i*2+2] = r.Id
+		rids[i*2+2] = r.Id.Hex()
 	}
 	if len(rids) > 1 {
 		conn.Send("ZADD", rids...)
