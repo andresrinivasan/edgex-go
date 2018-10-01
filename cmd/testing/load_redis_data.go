@@ -548,6 +548,7 @@ func processProvisionWatcher(jsonMap map[string]interface{}) {
 		OperatingState models.OperatingState
 	}{
 		BaseObject:     readOptionalBaseObject(jsonMap),
+		Id:             setId,
 		Name:           jsonMap["name"].(string),
 		Profile:        jsonMap["profile"].(map[string]interface{})["$id"].(map[string]interface{})["$oid"].(string),
 		Service:        jsonMap["service"].(map[string]interface{})["$id"].(map[string]interface{})["$oid"].(string),
@@ -602,6 +603,43 @@ func processSchedule(jsonMap map[string]interface{}) {
 	}
 }
 
+func processScheduleEvent(jsonMap map[string]interface{}) {
+	var err error
+
+	setId := jsonMap["_id"].(map[string]interface{})["$oid"].(string)
+	s := struct {
+		models.BaseObject
+		Id          string
+		Name        string
+		Schedule    string
+		Addressable string
+		Parameters  string
+		Service     string
+	}{
+		BaseObject:  readOptionalBaseObject(jsonMap),
+		Id:          setId,
+		Name:        jsonMap["name"].(string),
+		Schedule:    jsonMap["schedule"].(string),
+		Addressable: jsonMap["addressable"].(map[string]interface{})["$id"].(map[string]interface{})["$oid"].(string),
+		Parameters:  readOptionalString(jsonMap["parameters"]),
+		Service:     readOptionalString(jsonMap["service"]),
+	}
+
+	redisConn.Send("MULTI")
+	marshalled, _ := bson.Marshal(s)
+	redisConn.Send("SET", setId, marshalled)
+	redisConn.Send("ZADD", db.ScheduleEvent, 0, setId)
+	redisConn.Send("HSET", db.ScheduleEvent+":name", s.Name, setId)
+	redisConn.Send("SADD", db.ScheduleEvent+":addressable:"+s.Addressable, setId)
+	redisConn.Send("SADD", db.ScheduleEvent+":schedule:"+s.Schedule, setId)
+	redisConn.Send("SADD", db.ScheduleEvent+":service:"+s.Service, setId)
+
+	_, err = redisConn.Do("EXEC")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 // mongoimport -d metadata -c scheduleEvent --file scheduleEventDb.json
 
 var redisConn redis.Conn
@@ -621,6 +659,7 @@ func main() {
 		"deviceService":    processDeviceService,
 		"provisionWatcher": processProvisionWatcher,
 		"schedule":         processSchedule,
+		"scheduleEvent":    processScheduleEvent,
 	}
 
 	usage := "Type of input JSON; one of\n"
