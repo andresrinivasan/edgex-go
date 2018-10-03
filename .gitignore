@@ -3,8 +3,10 @@ vendor
 *.exe
 glide.lock
 *.DS_Store
-docker/docker-compose.yml
 .project
+*.snap
+*.bz2
+*.pyc
 
 # binary files
 cmd/config-seed/config-seed
@@ -18,18 +20,4 @@ cmd/support-notifications/support-notifications
 cmd/sys-mgmt-agent/sys-mgmt-agent
 
 # log dirs
-logs/
-cmd/config-seed/logs/
-cmd/core-command/logs/
-cmd/core-data/logs/
-cmd/core-metadata/logs/
-cmd/support-logging/logs/
-cmd/export-client/logs/
-cmd/export-distro/logs/
-cmd/support-notifications/logs/
-
-*.snap
-
-*.bz2
-
-*.pyc
+**/logs

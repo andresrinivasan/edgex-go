@@ -25,6 +25,7 @@ import (
 	"github.com/edgexfoundry/edgex-go/internal/pkg/db"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/db/memory"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/db/mongo"
+	"github.com/edgexfoundry/edgex-go/internal/pkg/db/redis"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/startup"
 	"github.com/edgexfoundry/edgex-go/pkg/clients"
 	"github.com/edgexfoundry/edgex-go/pkg/clients/logging"
@@ -77,8 +78,6 @@ func Retry(useConsul bool, useProfile string, timeout int, wait *sync.WaitGroup,
 	}
 	close(ch)
 	wait.Done()
-
-	return
 }
 
 func Init(useConsul bool) bool {
@@ -109,7 +108,7 @@ func initializeConfiguration(useConsul bool, useProfile string) (*ConfigurationS
 	}
 
 	if useConsul {
-		err := connectToConsul(conf)
+		conf, err = connectToConsul(conf)
 		if err != nil {
 			return nil, err
 		}
@@ -117,47 +116,43 @@ func initializeConfiguration(useConsul bool, useProfile string) (*ConfigurationS
 	return conf, nil
 }
 
-func connectToConsul(conf *ConfigurationStruct) error {
+func connectToConsul(conf *ConfigurationStruct) (*ConfigurationStruct, error) {
 	//Obtain ConsulConfig
 	cfg := consulclient.NewConsulConfig(conf.Registry, conf.Service, internal.CoreMetaDataServiceKey)
 	// Register the service in Consul
 	err := consulclient.ConsulInit(cfg)
 
 	if err != nil {
-		return fmt.Errorf("connection to Consul could not be made: %v", err.Error())
-	} else {
-		// Update configuration data from Consul
-		updateCh := make(chan interface{})
-		errCh := make(chan error)
-		dec := consulclient.NewConsulDecoder(conf.Registry)
-		dec.Target = &ConfigurationStruct{}
-		dec.Prefix = internal.ConfigV2Stem + internal.CoreMetaDataServiceKey
-		dec.ErrCh = errCh
-		dec.UpdateCh = updateCh
-
-		defer dec.Close()
-		defer close(updateCh)
-		defer close(errCh)
-		go dec.Run()
-
-		select {
-		case <-time.After(2 * time.Second):
-			err = errors.New("timeout loading config from registry")
-		case ex := <-errCh:
-			err = errors.New(ex.Error())
-		case raw := <-updateCh:
-			actual, ok := raw.(*ConfigurationStruct)
-			if !ok {
-				return errors.New("type check failed")
-			}
-			Configuration = actual
-		}
-
-		if err != nil {
-			return err
-		}
+		return conf, fmt.Errorf("connection to Consul could not be made: %v", err.Error())
 	}
-	return nil
+	// Update configuration data from Consul
+	updateCh := make(chan interface{})
+	errCh := make(chan error)
+	dec := consulclient.NewConsulDecoder(conf.Registry)
+	dec.Target = &ConfigurationStruct{}
+	dec.Prefix = internal.ConfigV2Stem + internal.CoreMetaDataServiceKey
+	dec.ErrCh = errCh
+	dec.UpdateCh = updateCh
+
+	defer dec.Close()
+	defer close(updateCh)
+	defer close(errCh)
+	go dec.Run()
+
+	select {
+	case <-time.After(2 * time.Second):
+		err = errors.New("timeout loading config from registry")
+	case ex := <-errCh:
+		err = errors.New(ex.Error())
+	case raw := <-updateCh:
+		actual, ok := raw.(*ConfigurationStruct)
+		if !ok {
+			return conf, errors.New("type check failed")
+		}
+		conf = actual
+	}
+
+	return conf, err
 }
 
 func listenForConfigChanges() {
@@ -192,16 +187,8 @@ func listenForConfigChanges() {
 
 func connectToDatabase() error {
 	var err error
-	dbConfig := db.Configuration{
-		Host:         Configuration.Databases["Primary"].Host,
-		Port:         Configuration.Databases["Primary"].Port,
-		Timeout:      Configuration.Databases["Primary"].Timeout,
-		DatabaseName: Configuration.Databases["Primary"].Name,
-		Username:     Configuration.Databases["Primary"].Username,
-		Password:     Configuration.Databases["Primary"].Password,
-	}
 
-	dbClient, err = newDBClient(Configuration.Databases["Primary"].Type, dbConfig)
+	dbClient, err = newDBClient(Configuration.Databases["Primary"].Type)
 	if err != nil {
 		dbClient = nil
 		return fmt.Errorf("couldn't create database client: %v", err.Error())
@@ -217,12 +204,26 @@ func connectToDatabase() error {
 }
 
 // Return the dbClient interface
-func newDBClient(dbType string, config db.Configuration) (interfaces.DBClient, error) {
+func newDBClient(dbType string) (interfaces.DBClient, error) {
 	switch dbType {
 	case db.MongoDB:
-		return mongo.NewClient(config), nil
+		dbConfig := db.Configuration{
+			Host:         Configuration.Databases["Primary"].Host,
+			Port:         Configuration.Databases["Primary"].Port,
+			Timeout:      Configuration.Databases["Primary"].Timeout,
+			DatabaseName: Configuration.Databases["Primary"].Name,
+			Username:     Configuration.Databases["Primary"].Username,
+			Password:     Configuration.Databases["Primary"].Password,
+		}
+		return mongo.NewClient(dbConfig), nil
 	case db.MemoryDB:
 		return &memory.MemDB{}, nil
+	case db.RedisDB:
+		dbConfig := db.Configuration{
+			Host: Configuration.Databases["Primary"].Host,
+			Port: Configuration.Databases["Primary"].Port,
+		}
+		return redis.NewClient(dbConfig)
 	default:
 		return nil, db.ErrUnsupportedDatabase
 	}
