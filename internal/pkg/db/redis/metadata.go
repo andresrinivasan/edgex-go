@@ -794,6 +794,10 @@ func addDeviceProfile(conn redis.Conn, dp *models.DeviceProfile) error {
 	if len(dp.Commands) > 0 {
 		cids := redis.Args{}.Add(db.DeviceProfile + ":commands:" + id)
 		for _, c := range dp.Commands {
+			err = addCommand(conn, false, &c)
+			if err != nil {
+				return err
+			}
 			cid := c.Id.Hex()
 			conn.Send("SADD", db.DeviceProfile+":command:"+cid, id)
 			cids = cids.Add(cid)
@@ -824,6 +828,7 @@ func deleteDeviceProfile(conn redis.Conn, id string) error {
 	for _, label := range dp.Labels {
 		conn.Send("SREM", db.DeviceProfile+":label:"+label, id)
 	}
+	// TODO: should commands be also removed?
 	for _, c := range dp.Commands {
 		conn.Send("SREM", db.DeviceProfile+":command:"+c.Id.Hex(), id)
 	}
@@ -1479,7 +1484,7 @@ func (c *Client) AddCommand(cmd *models.Command) error {
 	conn := c.Pool.Get()
 	defer conn.Close()
 
-	return addCommand(conn, cmd)
+	return addCommand(conn, true, cmd)
 }
 
 // Update command uses the ID of the command for identification
@@ -1509,7 +1514,7 @@ func (c *Client) UpdateCommand(updated *models.Command, orig *models.Command) er
 		orig.Origin = updated.Origin
 	}
 
-	return addCommand(conn, orig)
+	return addCommand(conn, true, orig)
 }
 
 // Delete the command by ID
@@ -1522,7 +1527,7 @@ func (c *Client) DeleteCommandById(id string) error {
 	return deleteCommand(conn, id)
 }
 
-func addCommand(conn redis.Conn, cmd *models.Command) error {
+func addCommand(conn redis.Conn, tx bool, cmd *models.Command) error {
 	if !cmd.Id.Valid() {
 		cmd.Id = bson.NewObjectId()
 	}
@@ -1539,15 +1544,20 @@ func addCommand(conn redis.Conn, cmd *models.Command) error {
 		return err
 	}
 
-	conn.Send("MULTI")
+	if tx {
+		conn.Send("MULTI")
+	}
 	conn.Send("SET", id, m)
 	conn.Send("ZADD", db.Command, 0, id)
 	conn.Send("SADD", db.Command+":name:"+cmd.Name, id)
-	_, err = conn.Do("EXEC")
-	if err != nil {
-		return err
+	if tx {
+		_, err = conn.Do("EXEC")
+		if err != nil {
+			return err
+		}
 	}
-	return err
+
+	return nil
 }
 
 func deleteCommand(conn redis.Conn, id string) error {
